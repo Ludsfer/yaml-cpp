@@ -46,6 +46,26 @@ TEST_F(EmitterTest, SimpleScalar) {
   ExpectEmit("Hello, World!");
 }
 
+TEST_F(EmitterTest, SimpleStdStringScalar) {
+  out << std::string("Hello, std string");
+
+  ExpectEmit("Hello, std string");
+}
+
+#if ((defined(_MSVC_LANG) && _MSVC_LANG >= 201703L) || __cplusplus >= 201703L)
+TEST_F(EmitterTest, SimpleStdStringViewScalar) {
+  out << std::string_view("Hello, std string view");
+
+  ExpectEmit("Hello, std string view");
+}
+
+TEST_F(EmitterTest, UnterminatedStdStringViewScalar) {
+  out << std::string_view("HelloUnterminated", 5);
+
+  ExpectEmit("Hello");
+}
+#endif
+
 TEST_F(EmitterTest, SimpleQuotedScalar) {
   Node n(Load("\"test\""));
   out << n;
@@ -104,9 +124,11 @@ TEST_F(EmitterTest, NumberPrecision) {
   out << 3.1425926f;
   out << 53.5893;
   out << 2384626.4338;
+  out << 1999926.4338;
+  out << 9999926.4338;
   out << EndSeq;
 
-  ExpectEmit("- 3.14\n- 54\n- 2.4e+06");
+  ExpectEmit("- 3.14\n- 54\n- 2.4e+06\n- 2e+06\n- 1e+07");
 }
 
 TEST_F(EmitterTest, SimpleSeq) {
@@ -174,6 +196,17 @@ TEST_F(EmitterTest, EmptyFlowSeqWithBegunContent) {
   ExpectEmit(R"([[  # comment
   ], [
   ]])");
+}
+
+TEST_F(EmitterTest, EmptyFlowSeqInMap) {
+  out << BeginMap;
+  out << Key << Flow << BeginSeq << EndSeq;
+  out << Value << 1;
+  out << Key << 2;
+  out << Value << Flow << BeginSeq << EndSeq;
+  out << EndMap;
+
+  ExpectEmit("[]: 1\n2: []");
 }
 
 TEST_F(EmitterTest, EmptyFlowMapWithBegunContent) {
@@ -614,6 +647,17 @@ TEST_F(EmitterTest, LocalTagWithScalar) {
   out << LocalTag("foo") << "bar";
 
   ExpectEmit("!foo bar");
+}
+
+TEST_F(EmitterTest, LocalTagRetainedAfterLoadingNode) {
+  Node n = Node("hello");
+  out << LocalTag("foo") << n;
+  std::string expected = "!foo hello";
+  ExpectEmit(expected);
+  Node yamlNode = Load(out.c_str());
+  Emitter emitter;
+  emitter << yamlNode;
+  EXPECT_EQ(expected, emitter.c_str());
 }
 
 TEST_F(EmitterTest, ComplexDoc) {
@@ -1734,6 +1778,48 @@ TEST_F(EmitterErrorTest, InvalidAlias) {
   out << EndSeq;
 
   ExpectEmitError(ErrorMsg::INVALID_ALIAS);
+}
+
+TEST_F(EmitterTest, ShowTrailingZero) {
+  out << BeginSeq;
+  out.SetShowTrailingZero(false);
+  out << 0.;
+  out << -0.;
+  out << 3.;
+  out << 42.;
+  out.SetShowTrailingZero(true);
+  out << 0.;
+  out << -0.;
+  out << 4.;
+  out << 51.;
+  out.SetShowTrailingZero(false);
+  out << 0.2;
+  out << 5.12;
+  out.SetShowTrailingZero(true);
+  out << 0.2;
+  out << 6.34;
+  out << std::numeric_limits<double>::infinity();
+  out << -std::numeric_limits<double>::infinity();
+  out << std::numeric_limits<double>::quiet_NaN();
+  out << std::numeric_limits<double>::signaling_NaN();
+  out << EndSeq;
+
+  ExpectEmit(R"(- 0
+- -0
+- 3
+- 42
+- 0.0
+- -0.0
+- 4.0
+- 51.0
+- 0.2
+- 5.12
+- 0.2
+- 6.34
+- .inf
+- -.inf
+- .nan
+- .nan)");
 }
 
 }  // namespace

@@ -65,6 +65,12 @@ inline void Node::EnsureNodeExists() const {
   }
 }
 
+inline void Node::Invalidate() {
+  m_isValid = false;
+  m_pNode = nullptr;
+  m_pMemory = nullptr;
+}
+
 inline bool Node::IsDefined() const {
   if (!m_isValid) {
     return false;
@@ -97,7 +103,7 @@ struct as_if {
     if (!node.m_pNode)
       return fallback;
 
-    T t;
+    T t = fallback;
     if (convert<T>::decode(node, t))
       return t;
     return fallback;
@@ -124,8 +130,8 @@ struct as_if<T, void> {
   const Node& node;
 
   T operator()() const {
-    if (!node.m_pNode)
-      throw TypedBadConversion<T>(node.Mark());
+    if (!node.m_pNode) // no fallback
+      throw InvalidNode(node.m_invalidKey);
 
     T t;
     if (convert<T>::decode(node, t))
@@ -140,6 +146,8 @@ struct as_if<std::string, void> {
   const Node& node;
 
   std::string operator()() const {
+    if (node.Type() == NodeType::Undefined) // no fallback
+      throw InvalidNode(node.m_invalidKey);
     if (node.Type() == NodeType::Null)
       return "null";
     if (node.Type() != NodeType::Scalar)
@@ -167,6 +175,14 @@ inline const std::string& Node::Scalar() const {
   if (!m_isValid)
     throw InvalidNode(m_invalidKey);
   return m_pNode ? m_pNode->scalar() : detail::node_data::empty_scalar();
+}
+
+YAML_ATTRIBUTE_NO_SANITIZE_ADDRESS
+inline const std::string& Node::UninstrumentedScalarForTesting() const {
+  if (m_isValid && m_pMemory != nullptr && m_pNode != nullptr)
+    throw InvalidNode("use-after-free");
+  else
+    throw BadDereference();
 }
 
 inline const std::string& Node::Tag() const {
